@@ -1,36 +1,124 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# IAB Repository Service (Next.js)
 
-## Getting Started
+Eigenständige Produktions-Variante des **IAB-Backend-Repository-Service** mit:
 
-First, run the development server:
+- **Next.js App Router** (UI + API in einem Prozess/Container)
+- **BFF-Proxy** zum DataHub – API-Passwort und Token nur serverseitig (HttpOnly-Session)
+- Integrierte **Hilfe** (`/hilfe`) und **API-Dokumentation** (`/api-docs`, Swagger UI)
+
+Die bestehende HTML-App (`../filesystem.html`) bleibt unverändert im übergeordneten Verzeichnis.
+
+## Voraussetzungen
+
+- Node.js 20+
+- npm
+
+## Einrichtung
 
 ```bash
+cd repository-next
+cp .env.example .env.local
+# SESSION_SECRET und ggf. DATAHUB_* anpassen
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App: [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Seite | Pfad |
+|-------|------|
+| Repository-UI | `/` |
+| Hilfe | `/hilfe` |
+| API-Dokumentation (Swagger) | `/api-docs` |
+| OpenAPI-Spezifikation | `/openapi-datahub.yaml` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Architektur
 
-## Learn More
+```
+Browser → /api/* (Next.js) → https://datahub.iab.de
+              ↑
+        iron-session (HttpOnly Cookie, DataHub Bearer Token)
+```
 
-To learn more about Next.js, take a look at the following resources:
+| Route | Funktion |
+|-------|----------|
+| `POST /api/auth/login` | Passwort prüfen, DataHub-Token holen |
+| `POST /api/auth/logout` | Session löschen |
+| `GET /api/auth/session` | Login-Status |
+| `GET /api/files` | Liste mit Filtern (Proxy) |
+| `POST /api/files` | Upload multipart (Proxy) |
+| `GET /api/files/[id]/download` | Download (Proxy) |
+| `PATCH /api/files/[id]` | Metadaten (Proxy, falls DataHub unterstützt) |
+| `DELETE /api/files/[id]` | Löschen (Proxy) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Docker
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+docker build -t iab-repository-next .
+docker run -p 3000:3000 --env-file .env.local iab-repository-next
+```
 
-## Deploy on Vercel
+## Legacy-App
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Die ursprüngliche statische App liegt weiterhin unter `../filesystem.html` (unabhängig von dieser Next-App).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Python-Import-Skripte
+
+Massenimport (Elasticsearch → DataHub) bleibt in den Skripten im Parent-Ordner:
+
+- `import_kurzber_elastic.py`
+- `upload_kurzber_2024.py`
+
+## Git / GitHub einchecken
+
+Voraussetzung: [Git für Windows](https://git-scm.com/download/win) (mit Git Credential Manager).
+
+### Einmalig: Repository konfigurieren
+
+```powershell
+cd repository-next
+powershell -ExecutionPolicy Bypass -File .\scripts\git-setup.ps1
+```
+
+Das Skript setzt **nur für dieses Projekt** (nicht global):
+
+| Einstellung | Wert |
+|-------------|------|
+| `user.name` | FranksZeug |
+| `user.email` | frank@frankpohlmann.de |
+| `credential.helper` | manager (Token wird nach dem ersten Push gespeichert) |
+| `origin` | `https://github.com/FranksZeug/repository-next.git` |
+
+### Einmalig auf GitHub
+
+1. Neues **leeres** Repository anlegen: [github.com/new](https://github.com/new)  
+   - Owner: **FranksZeug**  
+   - Name: **repository-next**  
+   - Kein README, keine .gitignore, keine Lizenz (alles liegt lokal vor)
+2. **Personal Access Token (PAT)** erstellen:  
+   GitHub → Settings → Developer settings → [Personal access tokens](https://github.com/settings/tokens)  
+   - Classic Token mit Berechtigung **repo**, oder Fine-grained mit Zugriff auf dieses Repository  
+   - GitHub akzeptiert beim `git push` **kein Kontopasswort** mehr – im Passwort-Feld den **PAT** eintragen
+
+### Commit und Push (Kommandozeile)
+
+```powershell
+cd c:\xampp2023\htdocs\iabUpload\repository-next
+git add -A
+git status
+git commit -m "IAB Repository Service (Next.js) mit BFF, Hilfe und API-Docs"
+git branch -M main
+git push -u origin main
+```
+
+Beim ersten Push:
+
+- **Benutzername:** `FranksZeug`
+- **Passwort:** Ihr PAT (wird unter Windows im Credential Manager gespeichert)
+
+Danach reicht `git push` ohne erneute Eingabe.
+
+### Hinweise
+
+- `.env.local` und andere `.env*`-Dateien werden **nicht** versioniert (nur `.env.example`).
+- Remote-URL ändern: `git remote set-url origin https://github.com/FranksZeug/ANDERER-NAME.git`

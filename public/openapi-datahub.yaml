@@ -1,0 +1,497 @@
+openapi: 3.0.3
+info:
+  title: IAB DataHub – File Upload API
+  description: |
+    Object-Repository-Service (Backend) auf [datahub.iab.de](https://datahub.iab.de).
+
+    **Authentifizierung:** Alle Endpunkte unter `/api/files` erfordern `Authorization: Bearer <token>`.
+    Token-Erzeugung über `POST /api/tokens` (ohne Token). Nach erfolgreicher Token-Antwort
+    in Swagger UI wird der Bearer automatisch gesetzt, oder manuell über **Authorize**
+    (nur den Token-Wert eintragen, z. B. `1|…`, ohne das Wort „Bearer“).
+
+    **Wichtig:** Header `Accept: application/json` senden (in dieser Swagger-UI automatisch).
+
+    **Limits:** max. 25 Dateien pro Upload, je max. 200 MB; Upload-Rate-Limit ca. 60/min;
+    Token-Erstellung ca. 10/min.
+
+    **Pfadregeln:** `a-z A-Z 0-9 . _ -` und `/`; kein führender/abschließender Slash, keine `..`-Segmente.
+
+    MIME-Typen werden serverseitig per Magic-Bytes geprüft.
+  version: 1.0.0
+  contact:
+    name: IAB DataHub
+servers:
+  - url: https://datahub.iab.de
+    description: Produktion / DataHub (aktueller Standard in dieser Anwendung)
+
+tags:
+  - name: Auth
+    description: Token-Erzeugung und -Widerruf
+  - name: Files
+    description: Hochladen, Auflisten, Download und Löschen von Dateien
+
+paths:
+  /api/tokens:
+    post:
+      tags: [Auth]
+      summary: Bearer-Token erstellen
+      operationId: createToken
+      security: []
+      parameters:
+        - name: Accept
+          in: header
+          required: true
+          schema:
+            type: string
+            default: application/json
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenCreateRequest'
+            example:
+              email: demo@iab.de
+              password: winter123456
+              token_name: my-client
+      responses:
+        '201':
+          description: Token erstellt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/tokens/current:
+    delete:
+      tags: [Auth]
+      summary: Aktuelles Token widerrufen
+      operationId: revokeCurrentToken
+      responses:
+        '200':
+          description: Token widerrufen (oder leere Erfolgsantwort)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files:
+    get:
+      tags: [Files]
+      summary: Eigene Dateien auflisten
+      description: |
+        Sortierung nach Hochladezeitpunkt (neueste zuerst), paginiert (100 Einträge pro Seite).
+        Filter sind kombinierbar.
+      operationId: listFiles
+      parameters:
+        - name: Accept
+          in: header
+          required: true
+          schema:
+            type: string
+            default: application/json
+        - name: path
+          in: query
+          description: Pfad-Präfix
+          schema:
+            type: string
+          example: kurzberichte/2026
+        - name: aktiv_id
+          in: query
+          description: Exakte Aktivitäts-ID
+          schema:
+            type: string
+          example: AKT-2026-001
+        - name: since
+          in: query
+          description: Nur Uploads ab diesem Zeitpunkt (ISO 8601, Zeitzone empfohlen)
+          schema:
+            type: string
+            format: date-time
+          example: '2026-04-30T12:00:00+02:00'
+        - name: freigabe
+          in: query
+          description: Nach Freigabe filtern (1 = freigegeben, 0 = gesperrt)
+          schema:
+            type: string
+            enum: ['0', '1']
+        - name: reprotyp
+          in: query
+          description: Nach Repräsentationstyp filtern
+          schema:
+            type: string
+          example: forschungsbericht
+      responses:
+        '200':
+          description: Dateiliste
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    post:
+      tags: [Files]
+      summary: Dateien hochladen
+      operationId: uploadFiles
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadRequest'
+      responses:
+        '201':
+          description: Upload erfolgreich
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUploadResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /api/files/{id}/download:
+    get:
+      tags: [Files]
+      summary: Datei herunterladen
+      description: |
+        Liefert die Datei mit korrektem Content-Type und originalem Dateinamen.
+        Bei `freigabe=false` oder `sperrfrist` in der Zukunft → 403.
+      operationId: downloadFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Dateiinhalt
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenDownload'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/files/{id}:
+    patch:
+      tags: [Files]
+      summary: Metadaten bearbeiten
+      description: Aktualisiert Metadaten (nicht den Dateiinhalt). Pfad und Dateiname bleiben unverändert.
+      operationId: updateFileMetadata
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+        - name: Accept
+          in: header
+          required: true
+          schema:
+            type: string
+            default: application/json
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileMetadataUpdate'
+      responses:
+        '200':
+          description: Metadaten aktualisiert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Files]
+      summary: Datei löschen
+      description: Löscht Datei und Metadaten. Nur eigene Dateien (sonst 404).
+      operationId: deleteFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Gelöscht (oder leere Erfolgsantwort)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+      description: |
+        **Nicht** E-Mail oder Passwort eintragen – nur den API-Token (z. B. `12|abc…`).
+        Token holen: Anmeldeformular oben auf der Seite oder `POST /api/tokens`.
+        Wert **ohne** vorangestelltes „Bearer“ eintragen.
+
+  parameters:
+    FileId:
+      name: id
+      in: path
+      required: true
+      description: UUID der Datei
+      schema:
+        type: string
+        format: uuid
+        example: 018f1a2b-c3d4-5678-90ab-cdef12345678
+
+  schemas:
+    TokenCreateRequest:
+      type: object
+      required: [email, password, token_name]
+      properties:
+        email:
+          type: string
+          format: email
+          example: demo@iab.de
+        password:
+          type: string
+          format: password
+          example: winter123456
+        token_name:
+          type: string
+          example: my-client
+
+    TokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          example: '1|xxxxxxxxxxxx'
+
+    FileRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        aktiv_id:
+          type: string
+          nullable: true
+        original_name:
+          type: string
+        path:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        reprotyp:
+          type: string
+          nullable: true
+        titel:
+          type: string
+          nullable: true
+        beschreibung:
+          type: string
+          nullable: true
+          maxLength: 5000
+        autoren:
+          type: string
+          nullable: true
+        sachschlagwoerter:
+          type: string
+          nullable: true
+        iab_themen:
+          type: string
+          nullable: true
+        sperrfrist:
+          type: string
+          format: date
+          nullable: true
+        reihenfolge:
+          type: integer
+          default: 0
+        freigabe:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+
+    FileListResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileRecord'
+        data:
+          type: array
+          description: Alternative Antwortstruktur (falls vom Server genutzt)
+          items:
+            $ref: '#/components/schemas/FileRecord'
+
+    FileUploadResponse:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileRecord'
+
+    FileMetadataUpdate:
+      type: object
+      properties:
+        aktiv_id:
+          type: string
+          nullable: true
+        reprotyp:
+          type: string
+          nullable: true
+        titel:
+          type: string
+          nullable: true
+        beschreibung:
+          type: string
+          nullable: true
+          maxLength: 5000
+        autoren:
+          type: string
+          nullable: true
+        sachschlagwoerter:
+          type: string
+          nullable: true
+        iab_themen:
+          type: string
+          nullable: true
+        sperrfrist:
+          type: string
+          format: date
+          nullable: true
+        reihenfolge:
+          type: integer
+        freigabe:
+          type: boolean
+
+    FileUploadRequest:
+      type: object
+      required:
+        - 'files[]'
+      properties:
+        'files[]':
+          type: array
+          items:
+            type: string
+            format: binary
+          description: 1–25 Dateien (multipart-Feldname `files[]`)
+          minItems: 1
+          maxItems: 25
+        path:
+          type: string
+          description: Virtueller Zielpfad
+          example: kurzberichte/2026
+        aktiv_id:
+          type: string
+          example: AKT-2026-001
+        reprotyp:
+          type: string
+          example: IAB-Kurzbericht
+        titel:
+          type: string
+        beschreibung:
+          type: string
+          maxLength: 5000
+        autoren:
+          type: string
+        sachschlagwoerter:
+          type: string
+        iab_themen:
+          type: string
+        sperrfrist:
+          type: string
+          format: date
+        reihenfolge:
+          type: integer
+          default: 0
+        freigabe:
+          type: boolean
+          default: true
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ErrorMessage:
+      type: object
+      properties:
+        message:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Kein oder ungültiger Token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+          example:
+            message: Unauthenticated.
+
+    ForbiddenDownload:
+      description: Download gesperrt (freigabe=false oder sperrfrist in der Zukunft)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+
+    NotFound:
+      description: Datei nicht gefunden oder gehört anderem Nutzer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+
+    ValidationError:
+      description: Validierungsfehler (Dateityp, Größe, Pfad, Metadaten)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            message: 'The files.0 field must be a file of type: pdf, txt, ...'
+            errors:
+              files.0:
+                - Unsupported file type.
+
+    TooManyRequests:
+      description: Rate Limit überschritten
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorMessage'
+
+security:
+  - bearerAuth: []
