@@ -755,6 +755,40 @@ th {
   font-size: 0.95rem;
 }
 
+.api-docs-top-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.api-docs-theme-toggle {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.api-docs-theme-toggle button {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.82rem;
+  border: 1px solid #3d5a8a;
+  border-radius: 8px;
+  background: transparent;
+  color: #c5d4ec;
+  cursor: pointer;
+  margin: 0;
+}
+
+.api-docs-theme-toggle button.active {
+  background: #4f8cff;
+  border-color: #4f8cff;
+  color: #fff;
+}
+
+.api-docs-theme-toggle button:hover:not(.active) {
+  background: #22365a;
+}
+
 .api-docs-top-bar a {
   color: #9ec5ff;
   margin: 0 0.15rem;

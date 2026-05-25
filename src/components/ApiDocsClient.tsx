@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import Script from "next/script";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API_BASE = "https://datahub.iab.de";
+const API_DOCS_THEME_KEY = "repository-api-docs-theme";
 
 declare global {
   interface Window {
@@ -38,6 +39,42 @@ export default function ApiDocsClient() {
   const [loginError, setLoginError] = useState(false);
   const [swaggerReady, setSwaggerReady] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [docsTheme, setDocsTheme] = useState<"dark" | "light">("light");
+
+  useEffect(() => {
+    let mode: "dark" | "light" = "light";
+    try {
+      const saved = localStorage.getItem(API_DOCS_THEME_KEY);
+      if (saved === "light" || saved === "dark") {
+        mode = saved;
+      }
+    } catch {
+      // ignore
+    }
+    setDocsTheme(mode);
+    document.documentElement.setAttribute("data-theme", mode);
+
+    return () => {
+      try {
+        const appTheme = localStorage.getItem("repository-theme");
+        if (appTheme === "light" || appTheme === "dark") {
+          document.documentElement.setAttribute("data-theme", appTheme);
+        }
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  function setDocsThemeMode(mode: "dark" | "light") {
+    setDocsTheme(mode);
+    document.documentElement.setAttribute("data-theme", mode);
+    try {
+      localStorage.setItem(API_DOCS_THEME_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }
 
   const applyBearerToken = useCallback((token: string) => {
     if (!token || !window.ui) return false;
@@ -164,12 +201,32 @@ export default function ApiDocsClient() {
       />
 
       <div className="api-docs-top-bar">
-        IAB DataHub File Upload API –
-        <Link href="/">Zur Anwendung</Link> ·
-        <Link href="/hilfe">Hilfe</Link> ·
-        <a href="/openapi-datahub.yaml" download>
-          openapi-datahub.yaml
-        </a>
+        <div className="api-docs-top-row">
+          <span>
+            IAB DataHub File Upload API –
+            <Link href="/">Zur Anwendung</Link> ·
+            <Link href="/hilfe">Hilfe</Link> ·
+            <a href="/openapi-datahub.yaml" download>
+              openapi-datahub.yaml
+            </a>
+          </span>
+          <div className="api-docs-theme-toggle">
+            <button
+              type="button"
+              className={docsTheme === "light" ? "active" : ""}
+              onClick={() => setDocsThemeMode("light")}
+            >
+              Hell
+            </button>
+            <button
+              type="button"
+              className={docsTheme === "dark" ? "active" : ""}
+              onClick={() => setDocsThemeMode("dark")}
+            >
+              Dunkel
+            </button>
+          </div>
+        </div>
         <div className="auth-login">
           <h2>Anmeldung für API-Tests</h2>
           <p>

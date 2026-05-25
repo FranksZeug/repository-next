@@ -58,6 +58,75 @@ docker build -t iab-repository-next .
 docker run -p 3000:3000 --env-file .env.local iab-repository-next
 ```
 
+## Auf anderen Server deployen (ohne Quellcode)
+
+Die App wird als **Standalone-Paket** gebaut – Sie kopieren nur den fertigen Ordner, **nicht** das ganze Entwicklungsprojekt mit `node_modules`.
+
+### Auf Ihrem PC bauen und packen
+
+```powershell
+cd repository-next
+powershell -ExecutionPolicy Bypass -File .\scripts\package-deploy.ps1
+```
+
+Ergebnis:
+
+| Ausgabe | Inhalt |
+|---------|--------|
+| `deploy/iab-repository/` | Fertiger Server-Ordner |
+| `deploy/iab-repository.zip` | Zum Hochladen per SFTP/SCP |
+
+### Auf dem Zielserver
+
+**Voraussetzung:** [Node.js 20+](https://nodejs.org) (nur Runtime, kein npm-Build nötig)
+
+```bash
+# ZIP entpacken oder Ordner kopieren nach z.B. /opt/iab-repository
+cd /opt/iab-repository
+cp .env.example .env.local
+nano .env.local   # SESSION_SECRET + DATAHUB_* setzen
+chmod +x start.sh
+./start.sh
+```
+
+Die App lauscht auf **Port 3000** (`PORT=8080 ./start.sh` zum Ändern).
+
+### Reverse-Proxy (optional)
+
+Vor Apache/Nginx die App intern lassen und nur nach außen proxen:
+
+```apache
+# Apache (mod_proxy)
+ProxyPass / http://127.0.0.1:3000/
+ProxyPassReverse / http://127.0.0.1:3000/
+```
+
+```nginx
+# Nginx
+location / {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+### Was Sie **nicht** auf den Server kopieren müssen
+
+- Gesamtes `repository-next` mit Dev-`node_modules`
+- `.env.local` vom Entwicklungs-PC (Secrets neu auf dem Server setzen)
+- Ordner `.git`, `.next` vom Dev-Rechner (steckt alles im Paket `deploy/iab-repository`)
+
+### Alternative: Docker auf dem Server
+
+```bash
+git clone git@github.com:FranksZeug/repository-next.git
+cd repository-next
+cp .env.example .env.local   # anpassen
+docker build -t iab-repository .
+docker run -d -p 3000:3000 --env-file .env.local --name iab-repo iab-repository
+```
+
 ## Legacy-App
 
 Die ursprüngliche statische App liegt weiterhin unter `../filesystem.html` (unabhängig von dieser Next-App).
